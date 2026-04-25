@@ -1,0 +1,13 @@
+FROM rust:1.77-slim as builder
+WORKDIR /app
+COPY . .
+RUN cargo build --release --locked
+
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates tini chrony && \
+    rm -rf /var/lib/apt/lists/* && useradd -m -u 1000 apex && mkdir -p /data /logs && chown -R apex:apex /data /logs
+COPY --from=builder /app/target/release/apex_venue /usr/local/bin/engine
+COPY --from=builder /app/target/release/tie_out /usr/local/bin/tie_out
+USER apex
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["engine"]

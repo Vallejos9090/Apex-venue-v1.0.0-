@@ -1,0 +1,28 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: eod-tie-out
+    namespace: trading
+    spec:
+      schedule: "0 0 * * *"
+        concurrencyPolicy: Forbid
+          jobTemplate:
+              spec:
+                    template:
+                            spec:
+                                      containers:
+                                                - name: tie-out
+                                                            image: apex-venue/engine:latest
+                                                                                command: ["/usr/local/bin/tie_out"]
+                                                                                                                                 envFrom:
+                                                                                                                                             - secretRef:
+                                                                                                                                                             name: db-creds
+                                                                                                                                                                                                 volumeMounts:
+                                                                                                                                                                                                             - name: wal-pvc
+                                                                                                                                                                                                                               mountPath: /data
+                                                                                                                                                                                                                                             readOnly: true
+                                                                                                                                                                                                                                                       restartPolicy: OnFailure
+                                                                                                                                                                                                                                                                 volumes:
+                                                                                                                                                                                                                                                                           - name: wal-pvc
+                                                                                                                                                                                                                                                                                       persistentVolumeClaim:
+                                                                                                                                                                                                                                                                                                     claimName: wal-pvc
