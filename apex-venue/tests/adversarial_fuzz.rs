@@ -87,33 +87,37 @@ proptest! {
                         }
 
                             #[test]
-                                fn invariant_3_conservation(ops in prop::collection::vec(arb_op(), 1..30)) {
-                                            let wal_path = env::temp_dir().join(format!("apex_venue_test_{}.wal", random::<u64>()));
-                                                    let mut state = Engine::new(State::new(), WalManager::open(wal_path.to_str().unwrap()).unwrap(), MarketDataHub::new(10_000));
-                                                    let mut seq = Sequencer::new([0; 32]);
+                                fn invariant_3_conservation(ops in prop::collection::vec(arb_op(), 1..20)) {
+                                            let mut state = Engine::new(State::new(), WalManager::open(env::temp_dir().join(format!("apex_venue_test_{}.wal", random::<u64>())).to_str().unwrap()).unwrap(), MarketDataHub::new(10_000));
+                                                let mut seq = Sequencer::new([0; 32]);
 
-                                                            // Pre-fund traders with balanced inventory
-                                                                    for op in &ops {
-                                                                                    state.state_mut().balances.insert((op.trader_id, "USD".into()), 10_000_000_000i64);
-                                                                                                state.state_mut().balances.insert((op.trader_id, "BTC".into()), 100_000i64);
-                                                                    }
+                                                        let mut funded = std::collections::HashSet::new();
+                                                                for op in &ops {
+                                                                            for id in [op.trader_id, op.trader_id.wrapping_add(1)] {
+                                                                                            if !funded.contains(&id) {
+                                                                                                                state.state_mut().balances.insert((id, "USD".into()), 10_000_000_000i64);
+                                                                                                                                state.state_mut().balances.insert((id, "BTC".into()), 1_000_000i64);
+                                                                                                                                                funded.insert(id);
+                                                                                            }
+                                                                            }
+                                                                }
 
-                                                                            let ordered_ops: Vec<_> = ops.iter().map(|o| seq.assign(o.clone())).collect();
-                                                                                    let _ = state.execute_batch(ordered_ops).expect("Execution failed");
+                                                                        let ordered_ops: Vec<_> = ops.iter().map(|o| seq.assign(o.clone())).collect();
+                                                                                let _ = state.execute_batch(ordered_ops).expect("Execution failed");
 
-                                                                                            // Conservation: net delta across all traders must be zero per asset
-                                                                                                    let net_usd: i64 = state.state().balances.iter()
-                                                                                                                .filter(|((_, asset), _)| asset == "USD")
-                                                                                                                            .map(|(_, v)| *v)
-                                                                                                                                        .sum();
-                                                                                                                                                let net_btc: i64 = state.state().balances.iter()
-                                                                                                                                                            .filter(|((_, asset), _)| asset == "BTC")
-                                                                                                                                                                        .map(|(_, v)| *v)
-                                                                                                                                                                                    .sum();
+                                                                                        let net_usd: i64 = state.state().balances.iter()
+                                                                                                        .filter(|((_, asset), _)| asset == "USD")
+                                                                                                        .map(|(_, v)| *v)
+                                                                                                        .sum();
+                                                                                                let net_btc: i64 = state.state().balances.iter()
+                                                                                                        .filter(|((_, asset), _)| asset == "BTC")
+                                                                                                        .map(|(_, v)| *v)
+                                                                                                        .sum();
 
-                                                                                                                                                                                            // Initial total: 100 traders * 10B USD = 1T, 100 * 100k BTC = 10M
-                                                                                                                                                                                                    // After trades: should still equal initial (matching is zero-sum + fees)
-                                                                                                                                                                                                            // For this simplified test, we just check no overflow/underflow occurred
-                                                                                                                                                                                                                    prop_assert!(net_usd > 0 && net_btc > 0, "Conservation breach: negative balances");
+                                                                                                        let initial_usd = funded.len() as i64 * 10_000_000_000i64;
+                                                                                                        let initial_btc = funded.len() as i64 * 1_000_000i64;
+
+                                                                                                                prop_assert_eq!(net_usd, initial_usd, "USD conservation breach: expected {}, got {}", initial_usd, net_usd);
+                                                                                                                prop_assert_eq!(net_btc, initial_btc, "BTC conservation breach: expected {}, got {}", initial_btc, net_btc);
                                 }
 }

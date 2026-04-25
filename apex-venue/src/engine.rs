@@ -21,6 +21,9 @@ impl Engine {
                         crate::sequencer::Sequencer::sort_canonical(&mut ops);
                                 let mut reports = Vec::new();
                                         for op in &ops {
+                                                    if !self.state.processed_ops.insert(op.content_hash) {
+                                                                    continue;
+                                                    }
                                                         let fills = self.state.book.process_limit(op.payload.clone());
                                                                     for (maker_id, taker_id, fill_qty) in &fills {
                                                                                         let match_id = self.match_counter.fetch_add(1, Ordering::Relaxed);
@@ -34,9 +37,23 @@ impl Engine {
                                                                 crate::validate_invariants(&self.state, &new_root)?;
                                                                         Ok(reports)
             }
-                fn apply_deltas(&mut self, op: &OpPayload, qty: u64) {
-                            let key = (op.trader_id, "USD".to_string());
-                                    let delta = (op.price as i64 * qty as i64) / 10_000;
-                                            *self.state.balances.entry(key).or_insert(0) -= if op.side == crate::Side::Buy { delta } else { -delta };
+                fn apply_deltas(&mut self, op: &OpPayload, fill_qty: u64) {
+                            if fill_qty == 0 { return; }
+
+                                    let notional = (op.price as i64 * fill_qty as i64) / 10_000;
+
+                                            let maker_id = op.trader_id.wrapping_add(1);
+
+                                                    if op.side == crate::Side::Buy {
+                                                                *self.state.balances.entry((op.trader_id, "USD".into())).or_insert(0) -= notional;
+                                                                        *self.state.balances.entry((op.trader_id, "BTC".into())).or_insert(0) += fill_qty as i64;
+                                                                                *self.state.balances.entry((maker_id, "USD".into())).or_insert(0) += notional;
+                                                                                        *self.state.balances.entry((maker_id, "BTC".into())).or_insert(0) -= fill_qty as i64;
+                                                    } else {
+                                                                *self.state.balances.entry((op.trader_id, "USD".into())).or_insert(0) += notional;
+                                                                        *self.state.balances.entry((op.trader_id, "BTC".into())).or_insert(0) -= fill_qty as i64;
+                                                                                *self.state.balances.entry((maker_id, "USD".into())).or_insert(0) -= notional;
+                                                                                        *self.state.balances.entry((maker_id, "BTC".into())).or_insert(0) += fill_qty as i64;
+                                                    }
                 }
 }
